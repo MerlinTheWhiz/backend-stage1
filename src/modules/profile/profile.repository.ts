@@ -24,7 +24,7 @@ export const findById = async (
 export const findAll = async (
   filters: Record<string, string>
 ): Promise<Profile[]> => {
-  return ProfileModel.find(filters).select("-_id -__v").lean();
+  return ProfileModel.find(filters).select("-_id -__v -gender_probability -sample_size -country_probability -created_at").lean();
 };
 
 // DELETE
