@@ -25,10 +25,35 @@ export interface Profile {
   name: string;
   gender: string;
   gender_probability: number;
-  sample_size: number;
   age: number;
   age_group: string;
   country_id: string;
+  country_name: string;
   country_probability: number;
   created_at: string;
+}
+
+export interface ProfileFilters {
+  gender?: string;
+  age_group?: string;
+  country_id?: string;
+  min_age?: number;
+  max_age?: number;
+  min_gender_probability?: number;
+  min_country_probability?: number;
+}
+
+export interface PaginationOptions {
+  page: number;
+  limit: number;
+  sort_by?: "age" | "created_at" | "gender_probability";
+  order?: "asc" | "desc";
+}
+
+export interface PaginatedResponse {
+  status: string;
+  page: number;
+  limit: number;
+  total: number;
+  data: Profile[];
 }

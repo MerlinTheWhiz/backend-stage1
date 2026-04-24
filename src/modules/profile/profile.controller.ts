@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import * as service from "./profile.service";
 import { CreateProfileInput } from "./profile.types";
+import { parseNaturalLanguageQuery } from "./nlp.parser";
 
 export const createProfile = async (
   req: Request,
@@ -35,12 +36,57 @@ export const getProfiles = async (
   next: NextFunction,
 ) => {
   try {
-    const data = await service.getProfiles(req.query);
-    res.json({
-      status: "success",
-      count: data.length,
-      data,
+    const result = await service.getProfiles(req.query);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const searchProfiles = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const q = req.query.q;
+
+    // Validate q parameter exists and is non-empty
+    if (!q || typeof q !== "string" || q.trim() === "") {
+      return res.status(400).json({
+        status: "error",
+        message: "Missing or empty parameter",
+      });
+    }
+
+    // Parse natural language query
+    const filters = parseNaturalLanguageQuery(q);
+
+    if (!filters) {
+      return res.status(400).json({
+        status: "error",
+        message: "Unable to interpret query",
+      });
+    }
+
+    // Build query params combining NLP-extracted filters with pagination params
+    const queryParams: Record<string, any> = {
+      ...filters,
+      page: req.query.page,
+      limit: req.query.limit,
+      sort_by: req.query.sort_by,
+      order: req.query.order,
+    };
+
+    // Remove undefined values
+    Object.keys(queryParams).forEach((key) => {
+      if (queryParams[key] === undefined) {
+        delete queryParams[key];
+      }
     });
+
+    const result = await service.getProfiles(queryParams);
+    res.json(result);
   } catch (err) {
     next(err);
   }
