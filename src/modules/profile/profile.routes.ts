@@ -12,6 +12,8 @@ router.post(
   asyncHandler(controller.createProfile),
 );
 
+// Search MUST come before :id to avoid "search" being captured as an id param
+router.get("/search", asyncHandler(controller.searchProfiles));
 router.get("/", asyncHandler(controller.getProfiles));
 router.get("/:id", asyncHandler(controller.getProfileById));
 router.delete("/:id", asyncHandler(controller.deleteProfile));

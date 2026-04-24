@@ -4,13 +4,135 @@ import { getAge } from "../../clients/agify.client";
 import { getNationality } from "../../clients/nationalize.client";
 import { getAgeGroup } from "../../utils/ageGroup";
 import { generateUUID } from "../../utils/uuid";
+import { getCountryName } from "../../utils/countryNames";
 
 import {
   GenderizeResponse,
   AgifyResponse,
   NationalizeResponse,
   Profile,
+  ProfileFilters,
+  PaginationOptions,
+  PaginatedResponse,
 } from "./profile.types";
+
+// Valid values for query parameter validation
+const VALID_SORT_BY = ["age", "created_at", "gender_probability"];
+const VALID_ORDER = ["asc", "desc"];
+const VALID_GENDERS = ["male", "female"];
+const VALID_AGE_GROUPS = ["child", "teenager", "adult", "senior"];
+
+export const parseQueryParams = (
+  query: Record<string, any>
+): { filters: ProfileFilters; pagination: PaginationOptions } => {
+  const filters: ProfileFilters = {};
+  const pagination: PaginationOptions = {
+    page: 1,
+    limit: 10,
+  };
+
+  if (query.page !== undefined) {
+    const page = Number(query.page);
+    if (!Number.isInteger(page) || page < 1) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    pagination.page = page;
+  }
+
+  if (query.limit !== undefined) {
+    const limit = Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    pagination.limit = Math.min(limit, 50);
+  }
+
+  if (query.sort_by !== undefined) {
+    if (!VALID_SORT_BY.includes(query.sort_by)) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    pagination.sort_by = query.sort_by;
+  }
+
+  if (query.order !== undefined) {
+    if (!VALID_ORDER.includes(query.order.toLowerCase())) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    pagination.order = query.order.toLowerCase();
+  }
+
+  if (query.gender !== undefined) {
+    if (!VALID_GENDERS.includes(query.gender.toLowerCase())) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    filters.gender = query.gender.toLowerCase();
+  }
+
+  if (query.age_group !== undefined) {
+    if (!VALID_AGE_GROUPS.includes(query.age_group.toLowerCase())) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    filters.age_group = query.age_group.toLowerCase();
+  }
+
+  if (query.country_id !== undefined) {
+    filters.country_id = query.country_id.toUpperCase();
+  }
+
+  if (query.min_age !== undefined) {
+    const val = Number(query.min_age);
+    if (isNaN(val) || val < 0) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    filters.min_age = val;
+  }
+
+  if (query.max_age !== undefined) {
+    const val = Number(query.max_age);
+    if (isNaN(val) || val < 0) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    filters.max_age = val;
+  }
+
+  if (query.min_gender_probability !== undefined) {
+    const val = Number(query.min_gender_probability);
+    if (isNaN(val) || val < 0 || val > 1) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    filters.min_gender_probability = val;
+  }
+
+  if (query.min_country_probability !== undefined) {
+    const val = Number(query.min_country_probability);
+    if (isNaN(val) || val < 0 || val > 1) {
+      const err: any = new Error("Invalid query parameters");
+      err.statusCode = 422;
+      throw err;
+    }
+    filters.min_country_probability = val;
+  }
+
+  return { filters, pagination };
+};
 
 
 export const createProfile = async (name: string): Promise<{
@@ -19,13 +141,11 @@ export const createProfile = async (name: string): Promise<{
 }> => {
   const normalized = name.toLowerCase();
 
-  // Check existing
   const existing = await repo.findByName(normalized);
   if (existing) {
     return { exists: true, data: existing };
   }
 
-  // Call APIs
   const [genderData, ageData, nationData]: [
     GenderizeResponse,
     AgifyResponse,
@@ -36,7 +156,6 @@ export const createProfile = async (name: string): Promise<{
     getNationality(normalized),
   ]);
 
-  // Edge case validation (IMPORTANT: 502 spec)
   if (!genderData.gender || genderData.count === 0) {
     const err: any = new Error("Genderize returned an invalid response");
     err.statusCode = 502;
@@ -55,51 +174,45 @@ export const createProfile = async (name: string): Promise<{
     throw err;
   }
 
-  // Transformations
   const ageGroup = getAgeGroup(ageData.age);
 
   const topCountry = nationData.country.reduce((prev, curr) =>
     curr.probability > prev.probability ? curr : prev
   );
 
-  // Create object to match type
   const profile: Profile = {
-  id: generateUUID(),
-  name: normalized,
-  gender: genderData.gender,
-  gender_probability: genderData.probability,
-  sample_size: genderData.count,
-  age: ageData.age,
-  age_group: ageGroup,
-  country_id: topCountry.country_id,
-  country_probability: topCountry.probability,
-  created_at: new Date().toISOString(),
-};
+    id: generateUUID(),
+    name: normalized,
+    gender: genderData.gender,
+    gender_probability: genderData.probability,
+    age: ageData.age,
+    age_group: ageGroup,
+    country_id: topCountry.country_id,
+    country_name: getCountryName(topCountry.country_id),
+    country_probability: topCountry.probability,
+    created_at: new Date().toISOString(),
+  };
 
-  // Save
   await repo.create(profile);
 
   return { exists: false, data: profile };
 };
 
 
-export const getProfiles = async (filters: any) => {
-  const query: any = {};
+export const getProfiles = async (
+  query: Record<string, any>
+): Promise<PaginatedResponse> => {
+  const { filters, pagination } = parseQueryParams(query);
 
-  if (filters.gender) {
-    query.gender = filters.gender.toLowerCase();
-  }
+  const { data, total } = await repo.findAllPaginated(filters, pagination);
 
-  if (filters.country_id) {
-    query.country_id = filters.country_id.toUpperCase();
-  }
-
-  if (filters.age_group) {
-    query.age_group = filters.age_group.toLowerCase();
-  }
-
-  const data = await repo.findAll(query);
-  return data;
+  return {
+    status: "success",
+    page: pagination.page,
+    limit: pagination.limit,
+    total,
+    data,
+  };
 };
 
 
