@@ -23,7 +23,7 @@ const VALID_GENDERS = ["male", "female"];
 const VALID_AGE_GROUPS = ["child", "teenager", "adult", "senior"];
 
 export const parseQueryParams = (
-  query: Record<string, any>
+  query: Record<string, any>,
 ): { filters: ProfileFilters; pagination: PaginationOptions } => {
   const filters: ProfileFilters = {};
   const pagination: PaginationOptions = {
@@ -134,8 +134,9 @@ export const parseQueryParams = (
   return { filters, pagination };
 };
 
-
-export const createProfile = async (name: string): Promise<{
+export const createProfile = async (
+  name: string,
+): Promise<{
   exists: boolean;
   data: Profile;
 }> => {
@@ -149,7 +150,7 @@ export const createProfile = async (name: string): Promise<{
   const [genderData, ageData, nationData]: [
     GenderizeResponse,
     AgifyResponse,
-    NationalizeResponse
+    NationalizeResponse,
   ] = await Promise.all([
     getGender(normalized),
     getAge(normalized),
@@ -177,7 +178,7 @@ export const createProfile = async (name: string): Promise<{
   const ageGroup = getAgeGroup(ageData.age);
 
   const topCountry = nationData.country.reduce((prev, curr) =>
-    curr.probability > prev.probability ? curr : prev
+    curr.probability > prev.probability ? curr : prev,
   );
 
   const profile: Profile = {
@@ -198,23 +199,52 @@ export const createProfile = async (name: string): Promise<{
   return { exists: false, data: profile };
 };
 
-
 export const getProfiles = async (
-  query: Record<string, any>
+  query: Record<string, any>,
 ): Promise<PaginatedResponse> => {
   const { filters, pagination } = parseQueryParams(query);
 
   const { data, total } = await repo.findAllPaginated(filters, pagination);
+
+  const totalPages = Math.ceil(total / pagination.limit);
+  const baseUrl = "/api/profiles";
+  const queryParams = new URLSearchParams();
+
+  Object.entries({ ...filters, ...pagination }).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      queryParams.append(key, value.toString());
+    }
+  });
+
+  const buildUrl = (page: number, limit: number) => {
+    const params = new URLSearchParams(queryParams);
+    params.set("page", page.toString());
+    params.set("limit", limit.toString());
+    return `${baseUrl}?${params.toString()}`;
+  };
+
+  const links = {
+    self: buildUrl(pagination.page, pagination.limit),
+    next:
+      pagination.page < totalPages
+        ? buildUrl(pagination.page + 1, pagination.limit)
+        : null,
+    prev:
+      pagination.page > 1
+        ? buildUrl(pagination.page - 1, pagination.limit)
+        : null,
+  };
 
   return {
     status: "success",
     page: pagination.page,
     limit: pagination.limit,
     total,
+    total_pages: totalPages,
+    links,
     data,
   };
 };
-
 
 export const getProfileById = async (id: string) => {
   const profile = await repo.findById(id);
@@ -228,7 +258,6 @@ export const getProfileById = async (id: string) => {
   return profile;
 };
 
-
 export const deleteProfile = async (id: string) => {
   const existing = await repo.findById(id);
 
@@ -241,4 +270,45 @@ export const deleteProfile = async (id: string) => {
   await repo.remove(id);
 
   return true;
+};
+
+export const exportProfiles = async (
+  query: Record<string, any>,
+): Promise<string> => {
+  const { filters, pagination } = parseQueryParams(query);
+
+  const { data } = await repo.findAllPaginated(filters, pagination);
+
+  const csvHeaders = [
+    "id",
+    "name",
+    "gender",
+    "gender_probability",
+    "age",
+    "age_group",
+    "country_id",
+    "country_name",
+    "country_probability",
+    "created_at",
+  ];
+
+  const csvRows = data.map((profile) => [
+    profile.id,
+    profile.name,
+    profile.gender,
+    profile.gender_probability,
+    profile.age,
+    profile.age_group,
+    profile.country_id,
+    profile.country_name,
+    profile.country_probability,
+    profile.created_at,
+  ]);
+
+  const csvContent = [
+    csvHeaders.join(","),
+    ...csvRows.map((row) => row.join(",")),
+  ].join("\n");
+
+  return csvContent;
 };
