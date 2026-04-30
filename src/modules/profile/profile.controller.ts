@@ -122,7 +122,6 @@ export const getProfileById = async (
   }
 };
 
-
 export const deleteProfile = async (
   req: Request,
   res: Response,
@@ -141,6 +140,35 @@ export const deleteProfile = async (
     await service.deleteProfile(id);
 
     return res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const exportProfiles = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const format = req.query.format as string;
+
+    if (format !== "csv") {
+      return res.status(400).json({
+        status: "error",
+        message: "Only CSV format is supported",
+      });
+    }
+
+    const result = await service.exportProfiles(req.query);
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="profiles_${new Date().toISOString()}.csv"`,
+    );
+
+    res.send(result);
   } catch (err) {
     next(err);
   }

@@ -4,5 +4,5 @@ dotenv.config();
 
 export const config = {
   port: Number(process.env.PORT) || 3000,
-  dbUrl: process.env.DB_URL as string,
+  MONGODB_URI: process.env.MONGODB_URI as string,
 };
