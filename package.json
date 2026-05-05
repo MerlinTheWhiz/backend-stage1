@@ -4,13 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run build && node --test tests",
     "dev": "nodemon --watch src --exec ts-node src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "clean": "rm -rf dist",
     "seed": "ts-node src/seed.ts",
-    "lint": "npx tsc --noEmit"
+    "lint": "npx tsc --noEmit",
+    "benchmark:profiles": "ts-node src/benchmarks/profile-performance.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
   "dependencies": {
     "@types/express-session": "^1.19.0",
     "axios": "^1.15.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "crypto": "^1.0.1",
     "dotenv": "^17.4.2",
@@ -34,6 +36,7 @@
   "devDependencies": {
     "@express-rate-limit/tsconfig": "^1.0.2",
     "@types/axios": "^0.9.36",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",

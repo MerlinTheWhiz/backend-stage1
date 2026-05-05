@@ -1,9 +1,32 @@
 import { Request, Response } from "express";
-import { Session } from "express-session";
 import { OAuthUtils } from "../../utils/oauth";
-import { UserService } from "../user/user.service";
 import { JWTUtils } from "../../utils/jwt";
+import { UserService } from "../user/user.service";
 import { AuthenticatedRequest } from "../../middlewares/auth.middleware";
+import { issueCsrfToken } from "../../middlewares/csrf.middleware";
+import { RefreshTokenService } from "./refresh-token.service";
+
+const ACCESS_TOKEN_COOKIE_MAX_AGE = 3 * 60 * 1000;
+const REFRESH_TOKEN_COOKIE_MAX_AGE = 5 * 60 * 1000;
+
+const setAuthCookies = (
+  res: Response,
+  tokens: { access_token: string; refresh_token: string },
+) => {
+  res.cookie("access_token", tokens.access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: ACCESS_TOKEN_COOKIE_MAX_AGE,
+  });
+
+  res.cookie("refresh_token", tokens.refresh_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE,
+  });
+};
 
 export class AuthController {
   static async githubAuth(req: Request, res: Response): Promise<void> {
@@ -58,15 +81,6 @@ export class AuthController {
         return;
       }
 
-      // Validate code format (GitHub authorization codes are typically 20-40 characters)
-      if (code.length < 20 || code.length > 40) {
-        res.status(400).json({
-          status: "error",
-          message: "Invalid authorization code format",
-        });
-        return;
-      }
-
       const session = req.session as any;
       const storedState = session?.state;
       const codeVerifier = session?.codeVerifier;
@@ -94,12 +108,13 @@ export class AuthController {
       const githubUser = await OAuthUtils.getGitHubUser(tokenData.access_token);
       const user = await UserService.createOrUpdateUser(githubUser);
 
-      const tokens = JWTUtils.generateTokens({
+      const jwtPayload = {
         userId: user.id,
         githubId: user.github_id,
         username: user.username,
         role: user.role,
-      });
+      };
+      const tokens = await RefreshTokenService.issueAuthTokens(jwtPayload);
 
       if (
         req.headers["user-agent"]?.includes("curl") ||
@@ -119,20 +134,8 @@ export class AuthController {
           },
         });
       } else {
-        res.cookie("access_token", tokens.access_token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 3 * 60 * 1000, // 3 minutes
-        });
-
-        res.cookie("refresh_token", tokens.refresh_token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 5 * 60 * 1000, // 5 minutes
-        });
-
+        setAuthCookies(res, tokens);
+        issueCsrfToken(req, res);
         res.redirect(
           process.env.WEB_REDIRECT_URL || "http://localhost:3001/dashboard",
         );
@@ -150,7 +153,8 @@ export class AuthController {
 
   static async refreshToken(req: Request, res: Response): Promise<void> {
     try {
-      const { refresh_token } = req.body;
+      const refresh_token =
+        req.body?.refresh_token || req.cookies?.refresh_token;
 
       if (!refresh_token) {
         res.status(400).json({
@@ -171,16 +175,24 @@ export class AuthController {
         return;
       }
 
-      const tokens = JWTUtils.generateTokens({
+      const jwtPayload = {
         userId: user.id,
         githubId: user.github_id,
         username: user.username,
         role: user.role,
-      });
+      };
+      const tokens = await RefreshTokenService.rotateToken(
+        refresh_token,
+        jwtPayload,
+      );
+
+      setAuthCookies(res, tokens);
+      issueCsrfToken(req, res);
 
       res.json({
         status: "success",
-        ...tokens,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
       });
     } catch (error) {
       res.status(401).json({
@@ -210,12 +222,13 @@ export class AuthController {
       const githubUser = await OAuthUtils.getGitHubUser(tokenData.access_token);
       const user = await UserService.createOrUpdateUser(githubUser);
 
-      const tokens = JWTUtils.generateTokens({
+      const jwtPayload = {
         userId: user.id,
         githubId: user.github_id,
         username: user.username,
         role: user.role,
-      });
+      };
+      const tokens = await RefreshTokenService.issueAuthTokens(jwtPayload);
 
       res.json({
         status: "success",
@@ -238,45 +251,49 @@ export class AuthController {
     }
   }
 
-  static async githubDeviceAuth(req: Request, res: Response): Promise<void> {
+  static async getCurrentUser(
+    req: AuthenticatedRequest,
+    res: Response,
+  ): Promise<void> {
     try {
-      const deviceCodeData = await OAuthUtils.initiateDeviceCodeFlow();
+      if (!req.user) {
+        res.status(401).json({
+          status: "error",
+          message: "Not authenticated",
+        });
+        return;
+      }
 
       res.json({
         status: "success",
-        data: deviceCodeData,
+        data: {
+          user: req.user,
+        },
       });
-    } catch (error: any) {
-      res.status(400).json({
+    } catch (error) {
+      res.status(500).json({
         status: "error",
-        message: error.message || "Failed to initiate device flow",
+        message: "Failed to get current user",
       });
     }
   }
 
   static async logout(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      // Enforce POST method for logout
-      if (req.method !== "POST") {
-        res.status(405).json({
-          status: "error",
-          message: "Method not allowed. Use POST for logout.",
-        });
-        return;
-      }
-
-      const { refresh_token } = req.body;
+      const refresh_token =
+        req.body?.refresh_token || req.cookies?.refresh_token;
 
       if (refresh_token) {
         try {
-          JWTUtils.verifyRefreshToken(refresh_token);
-        } catch (error) {
-          // Token is already invalid, continue with logout
+          await RefreshTokenService.revokeToken(refresh_token);
+        } catch {
+          // Continue clearing client cookies even if the token is already invalid.
         }
       }
 
       res.clearCookie("access_token");
       res.clearCookie("refresh_token");
+      res.clearCookie("csrf_token");
 
       res.json({
         status: "success",
@@ -288,5 +305,14 @@ export class AuthController {
         message: "Failed to logout",
       });
     }
+  }
+
+  static async getCsrfToken(req: Request, res: Response): Promise<void> {
+    const csrfToken = issueCsrfToken(req, res);
+
+    res.json({
+      status: "success",
+      csrf_token: csrfToken,
+    });
   }
 }

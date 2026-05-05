@@ -25,11 +25,6 @@ export interface JWTPayload {
   role: "admin" | "analyst";
 }
 
-export interface AuthTokens {
-  access_token: string;
-  refresh_token: string;
-}
-
 export interface RefreshTokenPayload {
   userId: string;
   tokenId: string;

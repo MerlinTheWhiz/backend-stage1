@@ -1,7 +1,10 @@
 import express from "express";
 import cors from "cors";
 import session from "express-session";
+import cookieParser from "cookie-parser";
 import { router } from "./routes";
+import authRoutes from "./modules/auth/auth.routes";
+import { requireCsrfProtection } from "./middlewares/csrf.middleware";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { requestLogger } from "./middlewares/logging.middleware";
 
@@ -15,14 +18,16 @@ app.use(
 );
 
 app.use(express.json());
+app.use(cookieParser());
 
 app.use(requestLogger);
+app.use(requireCsrfProtection);
 
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "fallback-session-secret",
-    resave: true,
-    saveUninitialized: true,
+    resave: false,
+    saveUninitialized: false,
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
@@ -32,6 +37,7 @@ app.use(
   }),
 );
 
+app.use("/auth", authRoutes);
 app.use("/api", router);
 
 app.use(errorMiddleware);

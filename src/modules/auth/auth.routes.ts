@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { AuthController } from "./auth.controller";
 import { rateLimit } from "express-rate-limit";
+import { authenticateTokenOrCookie } from "../../middlewares/auth.middleware";
 
 const router = Router();
 
@@ -22,7 +23,8 @@ router.get(
   authRateLimit,
   AuthController.githubCLICallback,
 );
-router.post("/github/device", authRateLimit, AuthController.githubDeviceAuth);
+router.get("/csrf", AuthController.getCsrfToken);
+router.get("/me", authenticateTokenOrCookie, AuthController.getCurrentUser);
 router.post("/refresh", authRateLimit, AuthController.refreshToken);
 router.post("/logout", authRateLimit, AuthController.logout);
 

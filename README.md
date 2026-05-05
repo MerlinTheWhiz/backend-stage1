@@ -136,6 +136,9 @@ npm run dev
 
 ### Authentication
 
+Canonical backend auth routes are exposed under `/api/auth/*`.
+Compatibility aliases are also available under `/auth/*` to match the Stage 3 task wording.
+
 #### 1. GitHub OAuth Login
 
 **GET** `/api/auth/github`
@@ -176,6 +179,12 @@ Handles GitHub OAuth callback, creates/updates user, issues tokens.
 
 Invalidates refresh token.
 
+#### 5. CSRF Token
+
+**GET** `/api/auth/csrf`
+
+Issues a CSRF token cookie for browser clients and returns the same token in the response body.
+
 ### Profiles (Authenticated)
 
 All profile endpoints require:
@@ -183,7 +192,60 @@ All profile endpoints require:
 - `Authorization: Bearer <access_token>` header
 - `X-API-Version: 1` header
 
-#### 5. Create Profile (Admin Only)
+#### 6. Get All Profiles (Analyst+)
+
+**GET** `/api/profiles`
+
+Supports filtering, sorting, pagination, deterministic query normalization, and read-through caching.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `gender` | string | Filter by gender: `male` or `female` |
+| `age_group` | string | Filter by age group: `child`, `teenager`, `adult`, `senior` |
+| `country_id` | string | Filter by ISO 3166-1 alpha-2 country code |
+| `min_age` | number | Minimum age (inclusive) |
+| `max_age` | number | Maximum age (inclusive) |
+| `min_gender_probability` | float | Minimum gender confidence (0–1) |
+| `min_country_probability` | float | Minimum country confidence (0–1) |
+| `sort_by` | string | Sort field: `age`, `created_at`, or `gender_probability` |
+| `order` | string | Sort order: `asc` or `desc` |
+| `page` | number | Page number (default: 1) |
+| `limit` | number | Results per page (default: 10, max: 50) |
+
+**Response (200):**
+
+```json
+{
+  "status": "success",
+  "page": 1,
+  "limit": 10,
+  "total": 2026,
+  "total_pages": 203,
+  "links": {
+    "self": "/api/profiles?page=1&limit=10&sort_by=created_at&order=asc",
+    "next": "/api/profiles?page=2&limit=10&sort_by=created_at&order=asc",
+    "prev": null
+  },
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Harriet Tubman",
+      "gender": "female",
+      "gender_probability": 0.97,
+      "age": 28,
+      "age_group": "adult",
+      "country_id": "US",
+      "country_name": "United States",
+      "country_probability": 0.89,
+      "created_at": "timestamp"
+    }
+  ]
+}
+```
+
+#### 7. Create Profile (Admin Only)
 
 **POST** `/api/profiles`
 
@@ -202,7 +264,7 @@ All profile endpoints require:
   "status": "success",
   "data": {
     "id": "uuid",
-    "name": "harriet tubman",
+    "name": "Harriet Tubman",
     "gender": "female",
     "gender_probability": 0.97,
     "age": 28,
@@ -215,141 +277,103 @@ All profile endpoints require:
 }
 ```
 
-**GET** `/api/profiles`
+#### 8. Natural Language Search (Analyst+)
 
-Supports filtering, sorting, and pagination in a single request.
-
-**Query Parameters:**
-
-| Parameter                 | Type   | Description                                                 |
-| ------------------------- | ------ | ----------------------------------------------------------- |
-| `gender`                  | string | Filter by gender: `male` or `female`                        |
-| `age_group`               | string | Filter by age group: `child`, `teenager`, `adult`, `senior` |
-| `country_id`              | string | Filter by ISO 3166-1 alpha-2 country code                   |
-| `min_age`                 | number | Minimum age (inclusive)                                     |
-| `max_age`                 | number | Maximum age (inclusive)                                     |
-| `min_gender_probability`  | float  | Minimum gender confidence (0–1)                             |
-| `min_country_probability` | float  | Minimum country confidence (0–1)                            |
-| `sort_by`                 | string | Sort field: `age`, `created_at`, or `gender_probability`    |
-| `order`                   | string | Sort order: `asc` or `desc`                                 |
-| `page`                    | number | Page number (default: 1)                                    |
-| `limit`                   | number | Results per page (default: 10, max: 50)                     |
-
-All filters are combinable. Results must match every condition passed.
-
-**Example:**
-
-```
-GET /api/profiles?gender=male&country_id=NG&min_age=25&sort_by=age&order=desc&page=1&limit=10
-```
-
-**Response (200):**
-
-````json
-{
-  "status": "success",
-  "page": 1,
-  "limit": 10,
-  "total": 2026,
-  "data": [
-    {
-      "id": "b3f9c1e2-7d4a-4c91-9c2a-1f0a8e5b6d12",
-      "name": "emmanuel",
-      "gender": "male",
-      "gender_probability": 0.99,
-      "age": 34,
-      "age_group": "adult",
-      "country_id": "NG",
-      "country_name": "Nigeria",
-      "country_probability": 0.85,
-      "created_at": "2026-04-01T12:00:00Z"
-    }
-  ]
-}
-
-#### 6. Get All Profiles (Analyst+)
-**GET** `/api/profiles`
-
-Supports filtering, sorting, and pagination with enhanced response format.
-
-**Query Parameters:**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `gender` | string | Filter by gender: `male` or `female` |
-| `age_group` | string | Filter by age group: `child`, `teenager`, `adult`, `senior` |
-| `country_id` | string | Filter by ISO 3166-1 alpha-2 country code |
-| `min_age` | number | Minimum age (inclusive) |
-| `max_age` | number | Maximum age (inclusive) |
-| `min_gender_probability` | float | Minimum gender confidence (0–1) |
-| `min_country_probability` | float | Minimum country confidence (0–1) |
-| `sort_by` | string | Sort field: `age`, `created_at`, or `gender_probability` |
-| `order` | string | Sort order: `asc` or `desc` |
-| `page` | number | Page number (default: 1) |
-| `limit` | number | Results per page (default: 10, max: 50) |
-
-**Response (200):**
-```json
-{
-  "status": "success",
-  "page": 1,
-  "limit": 10,
-  "total": 2026,
-  "total_pages": 203,
-  "links": {
-    "self": "/api/profiles?page=1&limit=10",
-    "next": "/api/profiles?page=2&limit=10",
-    "prev": null
-  },
-  "data": [
-    {
-      "id": "b3f9c1e2-7d4a-4c91-9c2a-1f0a8e5b6d12",
-      "name": "emmanuel",
-      "gender": "male",
-      "gender_probability": 0.99,
-      "age": 34,
-      "age_group": "adult",
-      "country_id": "NG",
-      "country_name": "Nigeria",
-      "country_probability": 0.85,
-      "created_at": "2026-04-01T12:00:00Z"
-    }
-  ]
-}
-
-#### 7. Natural Language Search (Analyst+)
 **GET** `/api/profiles/search`
 
-Parse plain English queries and convert them into filters.
+Parses natural language into structured filters, then runs the same normalized/cached profile query path as `GET /api/profiles`.
 
 **Example:**
-````
 
+```text
 GET /api/profiles/search?q=young males from nigeria
-
 ```
 
-#### 8. Get Profile by ID (Analyst+)
+#### 9. Get Profile by ID (Analyst+)
+
 **GET** `/api/profiles/:id`
 
-#### 9. Delete Profile (Admin Only)
+Returns a single profile by `id`. Hot ID reads are cached in-process.
+
+#### 10. Delete Profile (Admin Only)
+
 **DELETE** `/api/profiles/:id`
 
-#### 10. Export Profiles (CSV) (Analyst+)
+Deletes a profile and invalidates read caches.
+
+#### 11. Export Profiles (CSV) (Analyst+)
+
 **GET** `/api/profiles/export?format=csv`
 
-Applies same filters as `/api/profiles` and returns CSV file.
+Applies the same filters and sorting rules as `/api/profiles` and returns a CSV file.
 
 **Response:**
+
 - `Content-Type: text/csv`
 - `Content-Disposition: attachment; filename="profiles_<timestamp>.csv"`
 
 **CSV columns:**
+
+```text
+id,name,gender,gender_probability,age,age_group,country_id,country_name,country_probability,created_at
 ```
 
-id,name,gender,gender_probability,age,age_group,country_id,country_name,country_probability,created_at
+#### 12. Upload Profiles CSV (Admin Only)
 
-````
+**POST** `/api/profiles/upload`
+
+Uploads a CSV file using request streaming and chunked batch inserts.
+
+**Headers:**
+
+- `Content-Type: text/csv`
+- `X-API-Version: 1`
+- `Authorization: Bearer <access_token>` or valid cookie auth
+
+**Required CSV headers:**
+
+```text
+name,gender,age,country_id
+```
+
+**Optional CSV headers:**
+
+```text
+id,gender_probability,age_group,country_name,country_probability,created_at
+```
+
+**Behavior:**
+
+- Streams the upload without loading the full file into memory
+- Processes rows in bounded batches
+- Skips invalid rows without failing the entire upload
+- Preserves already-inserted rows if a later row fails
+- Uses the same duplicate-name idempotency rule as `POST /api/profiles`
+
+**Success Response (201):**
+
+```json
+{
+  "status": "success",
+  "total_rows": 50000,
+  "inserted": 48231,
+  "skipped": 1769,
+  "reasons": {
+    "duplicate_name": 1203,
+    "invalid_age": 312,
+    "missing_fields": 254
+  }
+}
+```
+
+**Common skip reasons:**
+
+- `duplicate_name`
+- `invalid_age`
+- `invalid_gender`
+- `missing_fields`
+- `malformed_row`
+- `broken_encoding`
 
 ---
 
@@ -397,6 +421,7 @@ Default role: `analyst`
 - **Access Token**: 3 minutes expiry, sent with each API request
 - **Refresh Token**: 5 minutes expiry, used to obtain new access tokens
 - **Storage**: CLI stores in `~/.insighta/credentials.json`, Web uses HTTP-only cookies
+- **CSRF Protection**: Browser cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` requests must send `X-CSRF-Token` matching the `csrf_token` cookie
 
 ---
 

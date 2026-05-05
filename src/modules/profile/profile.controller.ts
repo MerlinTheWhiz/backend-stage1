@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import * as service from "./profile.service";
+import { ingestProfilesCsv } from "./profile.ingestion";
 import { CreateProfileInput } from "./profile.types";
 import { parseNaturalLanguageQuery } from "./nlp.parser";
 
@@ -85,7 +86,10 @@ export const searchProfiles = async (
       }
     });
 
-    const result = await service.getProfiles(queryParams);
+    const result = await service.getProfiles(
+      queryParams,
+      "/api/profiles/search",
+    );
     res.json(result);
   } catch (err) {
     next(err);
@@ -169,6 +173,31 @@ export const exportProfiles = async (
     );
 
     res.send(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const uploadProfilesCsv = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const contentType = req.headers["content-type"] || "";
+
+    if (
+      typeof contentType !== "string" ||
+      !contentType.toLowerCase().includes("text/csv")
+    ) {
+      return res.status(400).json({
+        status: "error",
+        message: "Content-Type must be text/csv",
+      });
+    }
+
+    const result = await ingestProfilesCsv(req);
+    res.status(201).json(result);
   } catch (err) {
     next(err);
   }

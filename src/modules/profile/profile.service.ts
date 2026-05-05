@@ -5,6 +5,7 @@ import { getNationality } from "../../clients/nationalize.client";
 import { getAgeGroup } from "../../utils/ageGroup";
 import { generateUUID } from "../../utils/uuid";
 import { getCountryName } from "../../utils/countryNames";
+import { LRUCache } from "../../utils/lruCache";
 
 import {
   GenderizeResponse,
@@ -15,12 +16,24 @@ import {
   PaginationOptions,
   PaginatedResponse,
 } from "./profile.types";
+import {
+  buildProfileCacheKey,
+  normalizeProfileName,
+  normalizeProfileQuery,
+} from "./profile.normalization";
 
 // Valid values for query parameter validation
 const VALID_SORT_BY = ["age", "created_at", "gender_probability"];
 const VALID_ORDER = ["asc", "desc"];
 const VALID_GENDERS = ["male", "female"];
 const VALID_AGE_GROUPS = ["child", "teenager", "adult", "senior"];
+const profileListCache = new LRUCache<PaginatedResponse>(250, 30 * 1000);
+const profileByIdCache = new LRUCache<Profile>(500, 60 * 1000);
+
+export const invalidateProfileCaches = () => {
+  profileListCache.clear();
+  profileByIdCache.clear();
+};
 
 export const parseQueryParams = (
   query: Record<string, any>,
@@ -140,9 +153,10 @@ export const createProfile = async (
   exists: boolean;
   data: Profile;
 }> => {
-  const normalized = name.toLowerCase();
+  const displayName = name.trim();
+  const normalized = normalizeProfileName(displayName);
 
-  const existing = await repo.findByName(normalized);
+  const existing = await repo.findByNormalizedName(displayName);
   if (existing) {
     return { exists: true, data: existing };
   }
@@ -183,7 +197,7 @@ export const createProfile = async (
 
   const profile: Profile = {
     id: generateUUID(),
-    name: normalized,
+    name: displayName,
     gender: genderData.gender,
     gender_probability: genderData.probability,
     age: ageData.age,
@@ -195,22 +209,36 @@ export const createProfile = async (
   };
 
   await repo.create(profile);
+  invalidateProfileCaches();
 
   return { exists: false, data: profile };
 };
 
 export const getProfiles = async (
   query: Record<string, any>,
+  baseUrl = "/api/profiles",
 ): Promise<PaginatedResponse> => {
   const { filters, pagination } = parseQueryParams(query);
+  const normalizedQuery = normalizeProfileQuery(filters, pagination);
+  const cacheKey = buildProfileCacheKey(baseUrl, normalizedQuery);
+  const cachedResult = profileListCache.get(cacheKey);
 
-  const { data, total } = await repo.findAllPaginated(filters, pagination);
+  if (cachedResult) {
+    return cachedResult;
+  }
 
-  const totalPages = Math.ceil(total / pagination.limit);
-  const baseUrl = "/api/profiles";
+  const { data, total } = await repo.findAllPaginated(
+    normalizedQuery.filters,
+    normalizedQuery.pagination,
+  );
+
+  const totalPages = Math.ceil(total / normalizedQuery.pagination.limit);
   const queryParams = new URLSearchParams();
 
-  Object.entries({ ...filters, ...pagination }).forEach(([key, value]) => {
+  Object.entries({
+    ...normalizedQuery.filters,
+    ...normalizedQuery.pagination,
+  }).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
       queryParams.append(key, value.toString());
     }
@@ -223,30 +251,48 @@ export const getProfiles = async (
     return `${baseUrl}?${params.toString()}`;
   };
 
-  const links = {
-    self: buildUrl(pagination.page, pagination.limit),
-    next:
-      pagination.page < totalPages
-        ? buildUrl(pagination.page + 1, pagination.limit)
-        : null,
-    prev:
-      pagination.page > 1
-        ? buildUrl(pagination.page - 1, pagination.limit)
-        : null,
-  };
-
-  return {
+  const result = {
     status: "success",
-    page: pagination.page,
-    limit: pagination.limit,
+    page: normalizedQuery.pagination.page,
+    limit: normalizedQuery.pagination.limit,
     total,
     total_pages: totalPages,
-    links,
+    links: {
+      self: buildUrl(
+        normalizedQuery.pagination.page,
+        normalizedQuery.pagination.limit,
+      ),
+      next:
+        normalizedQuery.pagination.page < totalPages
+          ? buildUrl(
+              normalizedQuery.pagination.page + 1,
+              normalizedQuery.pagination.limit,
+            )
+          : null,
+      prev:
+        normalizedQuery.pagination.page > 1
+          ? buildUrl(
+              normalizedQuery.pagination.page - 1,
+              normalizedQuery.pagination.limit,
+            )
+          : null,
+    },
     data,
-  };
+  } satisfies PaginatedResponse;
+
+  profileListCache.set(cacheKey, result);
+
+  return result;
 };
 
 export const getProfileById = async (id: string) => {
+  const cacheKey = `profile:${id}`;
+  const cachedProfile = profileByIdCache.get(cacheKey);
+
+  if (cachedProfile) {
+    return cachedProfile;
+  }
+
   const profile = await repo.findById(id);
 
   if (!profile) {
@@ -254,6 +300,8 @@ export const getProfileById = async (id: string) => {
     err.statusCode = 404;
     throw err;
   }
+
+  profileByIdCache.set(cacheKey, profile);
 
   return profile;
 };
@@ -268,6 +316,7 @@ export const deleteProfile = async (id: string) => {
   }
 
   await repo.remove(id);
+  invalidateProfileCaches();
 
   return true;
 };
@@ -276,8 +325,13 @@ export const exportProfiles = async (
   query: Record<string, any>,
 ): Promise<string> => {
   const { filters, pagination } = parseQueryParams(query);
+  const normalizedQuery = normalizeProfileQuery(filters, pagination);
 
-  const { data } = await repo.findAllPaginated(filters, pagination);
+  const data = await repo.findAll(
+    normalizedQuery.filters,
+    normalizedQuery.pagination.sort_by,
+    normalizedQuery.pagination.order,
+  );
 
   const csvHeaders = [
     "id",
@@ -305,10 +359,8 @@ export const exportProfiles = async (
     profile.created_at,
   ]);
 
-  const csvContent = [
+  return [
     csvHeaders.join(","),
     ...csvRows.map((row) => row.join(",")),
   ].join("\n");
-
-  return csvContent;
 };
