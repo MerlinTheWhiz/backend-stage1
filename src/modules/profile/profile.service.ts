@@ -140,9 +140,10 @@ export const createProfile = async (
   exists: boolean;
   data: Profile;
 }> => {
-  const normalized = name.toLowerCase();
+  const displayName = name.trim();
+  const normalized = displayName.toLowerCase();
 
-  const existing = await repo.findByName(normalized);
+  const existing = await repo.findByNameInsensitive(displayName);
   if (existing) {
     return { exists: true, data: existing };
   }
@@ -183,7 +184,7 @@ export const createProfile = async (
 
   const profile: Profile = {
     id: generateUUID(),
-    name: normalized,
+    name: displayName,
     gender: genderData.gender,
     gender_probability: genderData.probability,
     age: ageData.age,
@@ -201,13 +202,13 @@ export const createProfile = async (
 
 export const getProfiles = async (
   query: Record<string, any>,
+  baseUrl = "/api/profiles",
 ): Promise<PaginatedResponse> => {
   const { filters, pagination } = parseQueryParams(query);
 
   const { data, total } = await repo.findAllPaginated(filters, pagination);
 
   const totalPages = Math.ceil(total / pagination.limit);
-  const baseUrl = "/api/profiles";
   const queryParams = new URLSearchParams();
 
   Object.entries({ ...filters, ...pagination }).forEach(([key, value]) => {
@@ -277,7 +278,7 @@ export const exportProfiles = async (
 ): Promise<string> => {
   const { filters, pagination } = parseQueryParams(query);
 
-  const { data } = await repo.findAllPaginated(filters, pagination);
+  const data = await repo.findAll(filters, pagination.sort_by, pagination.order);
 
   const csvHeaders = [
     "id",

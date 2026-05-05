@@ -1,21 +1,27 @@
 import { ProfileModel } from "./profile.model";
 import { Profile, ProfileFilters, PaginationOptions } from "./profile.types";
 
-
 const PROJECTION = { _id: 0, __v: 0 };
 
 export const create = async (data: Profile): Promise<Profile> => {
   return ProfileModel.create(data);
 };
 
-export const findByName = async (
-  name: string
+export const findByNameInsensitive = async (
+  name: string,
 ): Promise<Profile | null> => {
-  return ProfileModel.findOne({ name }).select("-_id -__v").lean();
+  return ProfileModel.findOne({
+    name: {
+      $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      $options: "i",
+    },
+  })
+    .select("-_id -__v")
+    .lean();
 };
 
 export const findById = async (
-  id: string
+  id: string,
 ): Promise<Profile | null> => {
   return ProfileModel.findOne({ id }).select("-_id -__v").lean();
 };
@@ -60,7 +66,7 @@ const buildQuery = (filters: ProfileFilters): Record<string, any> => {
 
 export const findAllPaginated = async (
   filters: ProfileFilters,
-  pagination: PaginationOptions
+  pagination: PaginationOptions,
 ): Promise<{ data: Profile[]; total: number }> => {
   const query = buildQuery(filters);
 
@@ -85,6 +91,19 @@ export const findAllPaginated = async (
   return { data: data as Profile[], total };
 };
 
+export const findAll = async (
+  filters: ProfileFilters,
+  sortBy: PaginationOptions["sort_by"] = "created_at",
+  order: PaginationOptions["order"] = "asc",
+): Promise<Profile[]> => {
+  const query = buildQuery(filters);
+  const sort: Record<string, 1 | -1> = {
+    [sortBy || "created_at"]: order === "desc" ? -1 : 1,
+  };
+
+  return (await ProfileModel.find(query, PROJECTION).sort(sort).lean()) as Profile[];
+};
+
 export const bulkUpsert = async (profiles: Profile[]): Promise<number> => {
   const operations = profiles.map((profile) => ({
     updateOne: {
@@ -99,7 +118,7 @@ export const bulkUpsert = async (profiles: Profile[]): Promise<number> => {
 };
 
 export const remove = async (
-  id: string
+  id: string,
 ): Promise<{ deletedCount?: number }> => {
   return ProfileModel.deleteOne({ id });
 };

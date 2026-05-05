@@ -2,7 +2,6 @@ import jwt from "jsonwebtoken";
 import { v7 as uuidv7 } from "uuid";
 import {
   JWTPayload,
-  AuthTokens,
   RefreshTokenPayload,
 } from "../modules/user/user.types";
 
@@ -29,13 +28,6 @@ export class JWTUtils {
     const token = jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "5m" });
 
     return { token, tokenId };
-  }
-
-  static generateTokens(payload: JWTPayload): AuthTokens {
-    const access_token = this.generateAccessToken(payload);
-    const { token: refresh_token } = this.generateRefreshToken(payload.userId);
-
-    return { access_token, refresh_token };
   }
 
   static verifyAccessToken(token: string): JWTPayload {

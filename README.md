@@ -136,6 +136,9 @@ npm run dev
 
 ### Authentication
 
+Canonical backend auth routes are exposed under `/api/auth/*`.
+Compatibility aliases are also available under `/auth/*` to match the Stage 3 task wording.
+
 #### 1. GitHub OAuth Login
 
 **GET** `/api/auth/github`
@@ -176,6 +179,12 @@ Handles GitHub OAuth callback, creates/updates user, issues tokens.
 
 Invalidates refresh token.
 
+#### 5. CSRF Token
+
+**GET** `/api/auth/csrf`
+
+Issues a CSRF token cookie for browser clients and returns the same token in the response body.
+
 ### Profiles (Authenticated)
 
 All profile endpoints require:
@@ -202,7 +211,7 @@ All profile endpoints require:
   "status": "success",
   "data": {
     "id": "uuid",
-    "name": "harriet tubman",
+    "name": "Harriet Tubman",
     "gender": "female",
     "gender_probability": 0.97,
     "age": 28,
@@ -397,6 +406,7 @@ Default role: `analyst`
 - **Access Token**: 3 minutes expiry, sent with each API request
 - **Refresh Token**: 5 minutes expiry, used to obtain new access tokens
 - **Storage**: CLI stores in `~/.insighta/credentials.json`, Web uses HTTP-only cookies
+- **CSRF Protection**: Browser cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` requests must send `X-CSRF-Token` matching the `csrf_token` cookie
 
 ---
 

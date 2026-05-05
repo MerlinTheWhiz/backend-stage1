@@ -4,11 +4,12 @@ import { validate } from "../../middlewares/validate.middleware";
 import { createProfileSchema } from "./profile.validation";
 import { asyncHandler } from "../../middlewares/asyncHandler";
 import {
-  authenticateToken,
+  AuthenticatedRequest,
+  authenticateTokenOrCookie,
   requireAdmin,
   requireAnalyst,
 } from "../../middlewares/auth.middleware";
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 
 const router = Router();
 
@@ -21,8 +22,12 @@ const apiRateLimit = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: {
+    keyGeneratorIpFallback: false,
+  },
   keyGenerator: (req) => {
-    return req.ip || req.connection.remoteAddress || "unknown";
+    const authenticatedReq = req as AuthenticatedRequest;
+    return authenticatedReq.user?.userId || ipKeyGenerator(req.ip || "unknown");
   },
 });
 
@@ -45,7 +50,7 @@ router.use((req, res, next) => {
 });
 
 // Apply authentication and rate limiting to all routes
-router.use(authenticateToken);
+router.use(authenticateTokenOrCookie);
 router.use(apiRateLimit);
 
 router.post(

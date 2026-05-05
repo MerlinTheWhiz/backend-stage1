@@ -85,7 +85,10 @@ export const searchProfiles = async (
       }
     });
 
-    const result = await service.getProfiles(queryParams);
+    const result = await service.getProfiles(
+      queryParams,
+      "/api/profiles/search",
+    );
     res.json(result);
   } catch (err) {
     next(err);
