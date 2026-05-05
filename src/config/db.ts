@@ -4,7 +4,11 @@ import { config } from "./env";
 export const connectDB = async () => {
   try {
     await mongoose.connect(config.MONGODB_URI, {
-        serverSelectionTimeoutMS: 30000,
+      serverSelectionTimeoutMS: 30000,
+      maxPoolSize: 30,
+      minPoolSize: 5,
+      maxIdleTimeMS: 30000,
+      waitQueueTimeoutMS: 5000,
     });
     console.log("MongoDB connected successfully");
   } catch (err) {

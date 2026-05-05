@@ -59,6 +59,7 @@ router.post(
   validate(createProfileSchema),
   asyncHandler(controller.createProfile),
 );
+router.post("/upload", requireAdmin, asyncHandler(controller.uploadProfilesCsv));
 
 // Search MUST come before :id to avoid "search" being captured as an id param
 router.get("/search", requireAnalyst, asyncHandler(controller.searchProfiles));

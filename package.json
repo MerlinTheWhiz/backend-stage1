@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "clean": "rm -rf dist",
     "seed": "ts-node src/seed.ts",
-    "lint": "npx tsc --noEmit"
+    "lint": "npx tsc --noEmit",
+    "benchmark:profiles": "ts-node src/benchmarks/profile-performance.ts"
   },
   "keywords": [],
   "author": "",

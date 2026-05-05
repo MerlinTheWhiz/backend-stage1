@@ -33,6 +33,10 @@ export interface Profile {
   created_at: string;
 }
 
+export interface StoredProfile extends Profile {
+  normalized_name: string;
+}
+
 export interface ProfileFilters {
   gender?: string;
   age_group?: string;
@@ -62,4 +66,12 @@ export interface PaginatedResponse {
     prev: string | null;
   };
   data: Profile[];
+}
+
+export interface CsvUploadSummary {
+  status: "success";
+  total_rows: number;
+  inserted: number;
+  skipped: number;
+  reasons: Record<string, number>;
 }
